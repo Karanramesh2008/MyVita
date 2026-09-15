@@ -12,7 +12,7 @@ def generate_health_insight(readings: list[dict]) -> str:
     # Read environment variables at call time so values loaded from backend/.env
     # by main.py are available even though this module was imported earlier.
     gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
 
     if not gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY is not configured on the backend")
@@ -27,35 +27,84 @@ def generate_health_insight(readings: list[dict]) -> str:
         for r in readings[-20:]
     ]
 
-    prompt = f"""You are MyVita's health-information assistant. Analyze the following blood-pressure readings.
-Give a short, calm, easy-to-understand trend summary for the patient.
-Include: overall trend, notable pattern, and one sensible next step.
-Do not diagnose disease, prescribe medication, or imply certainty. Do not invent missing data.
-If a reading appears severely high, advise the user to seek prompt professional medical assessment,
-but do not label a diagnosis. Mention that a single reading does not establish a diagnosis.
-Keep the response under 120 words and use plain language.
+    prompt = f"""
+You are the health-information assistant inside the MyVita application.
 
-Readings (newest entries are last):
+Analyze the patient's recorded blood-pressure readings below.
+
+IMPORTANT SAFETY RULES:
+- This is a health-information feature, not a diagnostic tool.
+- Do NOT diagnose any disease or medical condition.
+- Do NOT prescribe, stop, or change medication.
+- Do NOT claim certainty about the patient's health.
+- Do NOT claim cardiovascular improvement or deterioration.
+- Do NOT describe readings as "optimal", "healthy", or "normal" unless clearly supported by the data.
+- Describe only observable patterns in the recorded readings.
+- A single blood-pressure reading does not establish a diagnosis.
+- If readings appear concerning or persistently elevated, recommend discussing them with a healthcare professional.
+- Do not use alarming language.
+
+OUTPUT RULES:
+- Do NOT greet the user.
+- Do NOT say "Hello".
+- Do NOT say "Here is a summary".
+- Do NOT repeat the input readings.
+- Do NOT output "Data Analysis".
+- Do NOT output "Readings (newest entries last)".
+- Start directly with "Overall trend:".
+- Use plain, easy-to-understand English.
+- Keep the response between 60 and 100 words.
+- End with a complete sentence.
+
+Your response MUST contain exactly these 3 sections:
+
+Overall trend:
+Describe whether the blood-pressure readings generally increase, decrease, or remain relatively stable. Use cautious wording such as "lower than earlier readings" or "higher than earlier readings".
+
+Notable pattern:
+Describe the most important observable pattern in the readings, such as changes in systolic or diastolic pressure or consistency/variation between readings.
+
+Next step:
+Give ONE safe and practical recommendation, such as continuing regular monitoring or discussing persistent or concerning trends with a healthcare professional.
+
+Blood-pressure readings:
 {json.dumps(safe_readings, separators=(',', ':'))}
 """
 
     url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{gemini_model}:generateContent?key={gemini_api_key}"
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{gemini_model}:generateContent"
     )
+
     body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 180},
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+          "maxOutputTokens": 500,
+          "thinkingConfig": {
+            "thinkingLevel": "minimal"
+        }
+}
     }
+
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": gemini_api_key
+        },
         method="POST",
     )
-
     try:
-        with urllib.request.urlopen(request, timeout=25) as response:
+        with urllib.request.urlopen(request, timeout=60) as response:
             result = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
