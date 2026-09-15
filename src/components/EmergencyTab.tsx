@@ -196,71 +196,9 @@ export function EmergencyTab() {
         </div>
       </div>
       {/* Emergency Location Finder */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-              <MapPin className="w-5 h-5 text-indigo-600" />
-            </div>
-
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Emergency Location Finder
-              </h3>
-
-              <p className="text-xs text-slate-500 mt-1 max-w-xl">
-                Quickly find nearby hospitals and emergency care using your
-                current location.
-              </p>
-
-              <p className="text-[10px] text-slate-400 mt-2">
-                🔒 Your GPS location is used only for this search and is not
-                stored by MyVita.
-              </p>
-            </div>
-          </div>
-
-          <button
-            id="find-nearby-hospitals-btn"
-            type="button"
-            onClick={handleFindNearbyHospitals}
-            disabled={isLocating}
-            className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-bold shadow transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
-          >
-            {isLocating ? (
-              <>
-                <Navigation className="w-4 h-4 animate-pulse" />
-                Finding nearby care...
-              </>
-            ) : (
-              <>
-                <MapPin className="w-4 h-4" />
-                Find Nearby Hospitals
-              </>
-            )}
-          </button>
-          {profile.contactPhone && (
-            <a
-              id="call-emergency-contact-btn"
-              href={`tel:${profile.contactPhone}`}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
-            >
-              <Phone className="w-4 h-4" />
-              Call Emergency Contact
-            </a>
-          )}
-        </div>
-
-        {locationError && (
-          <div className="mt-3 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
-            {locationError}
-          </div>
-        )}
-      </div>
-      {/* Emergency SOS Panel */}
+      {/* Emergency Mode */}
       <div className="bg-rose-50 p-5 rounded-2xl border border-rose-200 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-
           <div className="flex items-start gap-3">
             <div className="w-11 h-11 rounded-xl bg-rose-600 flex items-center justify-center shrink-0">
               <AlertTriangle className="w-6 h-6 text-white" />
@@ -272,50 +210,58 @@ export function EmergencyTab() {
               </h3>
 
               <p className="text-xs text-rose-800 mt-1">
-                Quickly access nearby emergency care and your emergency contact.
+                Quick access to emergency care, your emergency contact,
+                and critical medical information.
               </p>
 
               <p className="text-[10px] text-rose-600 mt-2">
-                Your private health history remains protected.
+                🔒 Your private BP history and health records remain protected.
               </p>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
-
-            {/* Find Hospital */}
             <button
+              id="find-nearby-hospitals-btn"
               type="button"
               onClick={handleFindNearbyHospitals}
               disabled={isLocating}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-bold shadow flex items-center justify-center gap-2"
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-bold shadow transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
             >
-              <MapPin className="w-4 h-4" />
-              {isLocating ? 'Locating...' : 'Find Hospital'}
+              {isLocating ? (
+                <>
+                  <Navigation className="w-4 h-4 animate-pulse" />
+                  Finding Hospital...
+                </>
+              ) : (
+                <>
+                  <MapPin className="w-4 h-4" />
+                  Find Hospital
+                </>
+              )}
             </button>
 
-            {/* Call Contact */}
             {profile.contactPhone && (
               <a
+                id="call-emergency-contact-btn"
                 href={`tel:${profile.contactPhone}`}
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow flex items-center justify-center gap-2"
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
               >
                 <Phone className="w-4 h-4" />
                 Call Contact
               </a>
             )}
 
-            {/* Paramedic View */}
             <button
+              id="emergency-card-btn"
               type="button"
               onClick={handleSimulateParamedicScan}
               disabled={!profile.enabled}
-              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-xs font-bold shadow flex items-center justify-center gap-2"
+              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-xs font-bold shadow transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
             >
               <HeartPulse className="w-4 h-4" />
               Emergency Card
             </button>
-
           </div>
         </div>
 
