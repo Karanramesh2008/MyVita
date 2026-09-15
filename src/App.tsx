@@ -1,0 +1,369 @@
+import { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider, useToast } from './context/ToastContext';
+import { Navbar } from './components/Navbar';
+import { VaultView } from './components/VaultView';
+import { ScanModal } from './components/ScanModal';
+import { ConsentModal } from './components/ConsentModal';
+import { RecipientView } from './components/RecipientView';
+import { EmergencyTab } from './components/EmergencyTab';
+import { AuditTab } from './components/AuditTab';
+import { ConsentsTab } from './components/ConsentsTab';
+import { AnalyticsTab } from './components/AnalyticsTab';
+import { DoctorDashboard } from './components/DoctorDashboard';
+import { LoginModal } from './components/LoginModal';
+import { AuthPage } from './components/AuthPage';
+import { MyVitaLogo } from './components/MyVitaLogo';
+import { BPReading, ConsentRecord } from './types';
+import { initAndSeedDB, getAllReadings, getAllConsents } from './lib/db';
+import { syncBus, SyncMessage } from './lib/sync';
+import {
+  Lock,
+  Share2,
+  AlertTriangle,
+  FileText,
+  Activity,
+  Stethoscope,
+  Shield,
+  Layers,
+  ChevronRight,
+  ExternalLink,
+} from 'lucide-react';
+
+export type ActiveTab = 'vault' | 'consents' | 'emergency' | 'audit' | 'analytics';
+
+function MainAppContent() {
+  const { currentRole, showLoginModal, setShowLoginModal, isLoggedIn, logout } = useAuth();
+  const { showToast } = useToast();
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('vault');
+  const [readings, setReadings] = useState<BPReading[]>([]);
+  const [consents, setConsents] = useState<ConsentRecord[]>([]);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // Auth Page modal/overlay state
+  const [isAuthPageOpen, setIsAuthPageOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+
+  // Modals
+  const [isScanOpen, setIsScanOpen] = useState(false);
+  const [isConsentOpen, setIsConsentOpen] = useState(false);
+  const [shareTargetReading, setShareTargetReading] = useState<BPReading | null>(null);
+
+  // Active Recipient View Token (e.g. from /view/:token)
+  const [recipientToken, setRecipientToken] = useState<string | null>(null);
+
+  // Load route hash /view/{token} on mount & hashchange
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#/view/') || hash.startsWith('#view/')) {
+        const token = hash.replace(/^#\/?view\//, '');
+        if (token) {
+          setRecipientToken(decodeURIComponent(token));
+        }
+      } else if (!hash) {
+        setRecipientToken(null);
+      }
+    };
+
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Initialize DB and load readings
+  const refreshData = async () => {
+    try {
+      await initAndSeedDB();
+      const loadedReadings = await getAllReadings();
+      setReadings(loadedReadings);
+      const loadedConsents = await getAllConsents();
+      setConsents(loadedConsents);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshData();
+
+    // Subscribe to multi-tab real-time sync
+    const unsub = syncBus.subscribe((msg: SyncMessage) => {
+      refreshData();
+    });
+
+    return () => unsub();
+  }, []);
+
+  const handleOpenShare = (reading: BPReading) => {
+    setShareTargetReading(reading);
+    setIsConsentOpen(true);
+  };
+
+  const handleConsentCreated = (newConsent: ConsentRecord) => {
+    refreshData();
+  };
+
+  // Simulate Recipient Scan in View (Steps 3 & 4 of 3-minute demo path)
+  const handleSimulateOpenRecipient = (token: string) => {
+    setIsConsentOpen(false);
+    setRecipientToken(token);
+    window.location.hash = `#/view/${encodeURIComponent(token)}`;
+  };
+
+  const handleBackToVault = () => {
+    setRecipientToken(null);
+    window.location.hash = '';
+    // Switch to Audit tab if coming from simulated doctor scan to verify Step 5:
+    // "Returns to vault → audit log shows 'Dr. Sharma accessed your BP at 3:42 PM'"
+    setActiveTab('audit');
+    showToast('Returned to Vault', 'info', 'Check the Audit log to verify Dr. Sharma access');
+  };
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-800">
+        <div className="mb-4">
+          <MyVitaLogo size="lg" showText={false} />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Initializing MyVita...</h2>
+        <p className="text-xs text-slate-500 mt-1">Loading cryptographic keys and private on-device vault</p>
+      </div>
+    );
+  }
+
+  // If viewing recipient link directly (/view/:token)
+  if (recipientToken) {
+    return <RecipientView tokenString={recipientToken} onBackToVault={handleBackToVault} />;
+  }
+
+  // Dedicated Login / Register page if user is not signed in or requested auth page
+  if (!isLoggedIn) {
+    return <AuthPage initialMode={authMode} onSuccess={() => refreshData()} />;
+  }
+
+  if (isAuthPageOpen) {
+    return (
+      <AuthPage
+        initialMode={authMode}
+        canCancel={true}
+        onCancel={() => setIsAuthPageOpen(false)}
+        onSuccess={() => {
+          setIsAuthPageOpen(false);
+          refreshData();
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans antialiased selection:bg-teal-500 selection:text-white">
+      {/* Top Navigation Bar */}
+      <Navbar
+        onOpenAuth={(mode) => {
+          setAuthMode(mode || 'login');
+          setIsAuthPageOpen(true);
+        }}
+      />
+
+      {/* Main Container */}
+      <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-24 space-y-6">
+        {/* DOCTOR ROLE VIEW */}
+        {currentRole === 'doctor' ? (
+          <div className="space-y-6">
+            <DoctorDashboard onOpenRecipientView={handleSimulateOpenRecipient} />
+          </div>
+        ) : (
+          /* PATIENT ROLE VIEW */
+          <div className="space-y-6">
+            {/* Top Sub-tabs Navigation */}
+            <nav
+              id="patient-tabs-bar"
+              className="flex items-center gap-1.5 p-1.5 bg-slate-200/80 rounded-2xl max-w-xl shadow-xs overflow-x-auto border border-slate-200/60"
+              aria-label="Vault Sections"
+            >
+              <button
+                id="tab-btn-vault"
+                onClick={() => setActiveTab('vault')}
+                className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
+                  activeTab === 'vault'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                }`}
+              >
+                <Lock className="w-4 h-4 text-teal-600" />
+                <span>Vault</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-teal-100 text-teal-800 font-mono">
+                  {readings.length}
+                </span>
+              </button>
+
+              <button
+                id="tab-btn-consents"
+                onClick={() => setActiveTab('consents')}
+                className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
+                  activeTab === 'consents'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                }`}
+              >
+                <Share2 className="w-4 h-4 text-teal-600" />
+                <span>Consents</span>
+                {consents.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-mono">
+                    {consents.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                id="tab-btn-emergency"
+                onClick={() => setActiveTab('emergency')}
+                className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
+                  activeTab === 'emergency'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4 text-rose-500" />
+                <span>Emergency</span>
+              </button>
+
+              <button
+                id="tab-btn-audit"
+                onClick={() => setActiveTab('audit')}
+                className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
+                  activeTab === 'audit'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                }`}
+              >
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>Audit</span>
+              </button>
+
+              <button
+                id="tab-btn-analytics"
+                onClick={() => setActiveTab('analytics')}
+                className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
+                  activeTab === 'analytics'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                }`}
+              >
+                <Activity className="w-4 h-4 text-indigo-600" />
+                <span>Analytics</span>
+              </button>
+            </nav>
+
+            {/* Tab Views */}
+            {activeTab === 'vault' && (
+              <VaultView
+                readings={readings}
+                onOpenScan={() => setIsScanOpen(true)}
+                onOpenShare={handleOpenShare}
+                onRefresh={refreshData}
+              />
+            )}
+
+            {activeTab === 'consents' && (
+              <ConsentsTab
+                onOpenCreateConsent={() => {
+                  setShareTargetReading(readings[0] || null);
+                  setIsConsentOpen(true);
+                }}
+                onSimulateOpenRecipient={handleSimulateOpenRecipient}
+              />
+            )}
+
+            {activeTab === 'emergency' && <EmergencyTab />}
+
+            {activeTab === 'audit' && <AuditTab />}
+
+            {activeTab === 'analytics' && <AnalyticsTab readings={readings} consents={consents} />}
+          </div>
+        )}
+      </div>
+
+      {/* Floating Bottom Tabs Bar for Mobile (Vault | Consents | Emergency | Audit) as requested */}
+      {currentRole === 'patient' && (
+        <nav
+          id="mobile-bottom-tabs"
+          className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-3 py-2 flex items-center justify-around shadow-lg"
+          aria-label="Mobile Navigation"
+        >
+          <button
+            onClick={() => setActiveTab('vault')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-bold ${
+              activeTab === 'vault' ? 'text-teal-600' : 'text-slate-400'
+            }`}
+          >
+            <Lock className="w-4 h-4" />
+            <span>Vault</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('consents')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-bold ${
+              activeTab === 'consents' ? 'text-teal-600' : 'text-slate-400'
+            }`}
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Consents</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('emergency')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-bold ${
+              activeTab === 'emergency' ? 'text-rose-600' : 'text-slate-400'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
+            <span>Emergency</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-bold ${
+              activeTab === 'audit' ? 'text-emerald-600' : 'text-slate-400'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Audit</span>
+          </button>
+        </nav>
+      )}
+
+      {/* MODAL 1: Scan BP Reading with OCR */}
+      <ScanModal
+        isOpen={isScanOpen}
+        onClose={() => setIsScanOpen(false)}
+        onSaved={refreshData}
+      />
+
+      {/* MODAL 2: Create Consent (4-step wizard) */}
+      <ConsentModal
+        isOpen={isConsentOpen}
+        onClose={() => setIsConsentOpen(false)}
+        targetReading={shareTargetReading}
+        allReadings={readings}
+        onConsentCreated={handleConsentCreated}
+        onSimulateOpenRecipient={handleSimulateOpenRecipient}
+      />
+
+      {/* MODAL 3: Role Authentication Modal */}
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ToastProvider>
+        <MainAppContent />
+      </ToastProvider>
+    </AuthProvider>
+  );
+}

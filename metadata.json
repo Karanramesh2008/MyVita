@@ -1,0 +1,6 @@
+{
+  "name": "MyVita",
+  "description": "Connect. Track. Understand. Thrive. Consent-scoped, time-boxed health data sharing with encrypted tokens and emergency access.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
