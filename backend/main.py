@@ -9,12 +9,13 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from dotenv import load_dotenv
+from ai import generate_health_insight
 
 load_dotenv()
 
 SECRET_KEY = os.getenv("MYVITA_SECRET_KEY", "myvita-hackathon-secret-change-me").encode()
 
-app = FastAPI(title="MyVita API", version="1.0.0")
+app = FastAPI(title="MyVita API", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -49,6 +50,9 @@ class ConsentRequest(BaseModel):
     purpose: str
     duration: str
     readingIds: list[str] = []
+
+class AIInsightRequest(BaseModel):
+    readings: list[ReadingRequest] = Field(min_length=1, max_length=50)
 
 accounts: dict[str, dict] = {
     "ananya.sharma@myvita.health": {
@@ -135,6 +139,19 @@ def delete_reading(reading_id: str):
         raise HTTPException(status_code=404, detail="Reading not found")
     del readings[reading_id]
     return {"success": True}
+
+
+@app.post("/api/ai/health-insight")
+def ai_health_insight(data: AIInsightRequest):
+    try:
+        insight = generate_health_insight([r.model_dump() for r in data.readings])
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "insight": insight,
+        "disclaimer": "Informational only; not a diagnosis or a substitute for professional medical advice.",
+    }
 
 
 @app.post("/api/consents")
