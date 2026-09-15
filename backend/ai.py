@@ -4,14 +4,18 @@ import urllib.error
 import urllib.request
 
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
-
 def generate_health_insight(readings: list[dict]) -> str:
     """Generate a concise, non-diagnostic BP trend insight with Gemini."""
     if not readings:
         return "Add at least one blood-pressure reading to generate an AI insight."
+
+    # Read environment variables at call time so values loaded from backend/.env
+    # by main.py are available even though this module was imported earlier.
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+
+    if not gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY is not configured on the backend")
 
     safe_readings = [
         {
@@ -35,12 +39,9 @@ Readings (newest entries are last):
 {json.dumps(safe_readings, separators=(',', ':'))}
 """
 
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not configured on the backend")
-
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        f"{gemini_model}:generateContent?key={gemini_api_key}"
     )
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
