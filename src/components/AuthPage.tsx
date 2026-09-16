@@ -1,528 +1,991 @@
 import React, { useState } from 'react';
-import { useAuth, PATIENT_USER, DOCTOR_USER } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
-import { MyVitaLogo } from './MyVitaLogo';
-import { UserRole } from '../types';
 import {
-  Lock,
-  Mail,
-  KeyRound,
-  User,
-  Shield,
-  Stethoscope,
-  ArrowRight,
-  CheckCircle2,
-  AlertCircle,
   Eye,
   EyeOff,
-  Phone,
-  Award,
-  Sparkles,
-  QrCode,
-  Clock,
   HeartPulse,
+  Lock,
+  Mail,
+  User,
+  Phone,
+  Stethoscope,
+  ArrowRight,
+  ShieldCheck,
 } from 'lucide-react';
 
+import {
+  useAuth,
+  RegisterPayload,
+} from '../context/AuthContext';
+
+import { UserRole } from '../types';
+
 interface AuthPageProps {
-  initialMode?: 'login' | 'signup';
+  initialMode?: 'login' | 'register';
   onSuccess?: () => void;
-  canCancel?: boolean;
-  onCancel?: () => void;
 }
 
-export function AuthPage({
+export default function AuthPage({
   initialMode = 'login',
   onSuccess,
-  canCancel = false,
-  onCancel,
 }: AuthPageProps) {
-  const { loginWithCredentials, registerUser, loginAs, registeredAccounts } = useAuth();
-  const { showToast } = useToast();
 
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
-  const [showPassword, setShowPassword] = useState(false);
+  const {
+    loginWithCredentials,
+    loginAs,
+    registerUser,
+  } = useAuth();
 
-  // Login form state
-  const [loginEmail, setLoginEmail] = useState('ananya.sharma@myvita.health');
-  const [loginPassword, setLoginPassword] = useState('demo123');
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Register form state
-  const [regRole, setRegRole] = useState<UserRole>('patient');
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [regPhone, setRegPhone] = useState('');
-  const [regSpecialty, setRegSpecialty] = useState('Cardiology');
-  const [regLicense, setRegLicense] = useState('');
-  const [regError, setRegError] = useState<string | null>(null);
-
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-    setIsSubmitting(true);
-
-    try {
-      const res = loginWithCredentials(loginEmail, loginPassword);
-      if (res.success) {
-        showToast('Welcome back to MyVita', 'success', `Signed in as ${loginEmail}`);
-        if (onSuccess) onSuccess();
-      } else {
-        setLoginError(res.message || 'Failed to sign in.');
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRegisterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setRegError(null);
-
-    if (!regName.trim()) {
-      setRegError('Please enter your full name.');
-      return;
-    }
-    if (!regEmail.trim() || !regEmail.includes('@')) {
-      setRegError('Please enter a valid email address.');
-      return;
-    }
-    if (regPassword.length < 4) {
-      setRegError('Password should be at least 4 characters long.');
-      return;
-    }
-    if (regPassword !== regConfirmPassword) {
-      setRegError('Passwords do not match.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const res = registerUser({
-        name: regName,
-        email: regEmail,
-        password: regPassword,
-        role: regRole,
-        phone: regPhone || undefined,
-        specialty: regRole === 'doctor' ? regSpecialty : undefined,
-        licenseNumber: regRole === 'doctor' ? regLicense || 'MD-ACTIVE' : undefined,
-      });
-
-      if (res.success) {
-        showToast(
-          'Registration Successful!',
-          'success',
-          `Welcome to MyVita, ${regName}! Your personal ${regRole === 'patient' ? 'health vault' : 'clinician portal'} is active.`
-        );
-        if (onSuccess) onSuccess();
-      } else {
-        setRegError(res.message || 'Registration failed.');
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleQuickLogin = (role: UserRole) => {
-    loginAs(role);
-    showToast(
-      `Instant Demo: Signed in as ${role === 'patient' ? PATIENT_USER.name : DOCTOR_USER.name}`,
-      'success',
-      `${role === 'patient' ? 'Patient Vault unlocked' : 'Clinician Review Dashboard active'}`
+  const [mode, setMode] =
+    useState<'login' | 'register'>(
+      initialMode
     );
-    if (onSuccess) onSuccess();
+
+  const [role, setRole] =
+    useState<UserRole>('patient');
+
+  const [name, setName] =
+    useState('');
+
+  const [email, setEmail] =
+    useState('');
+
+  const [password, setPassword] =
+    useState('');
+
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
+
+  const [phone, setPhone] =
+    useState('');
+
+  const [specialty, setSpecialty] =
+    useState('');
+
+  const [licenseNumber, setLicenseNumber] =
+    useState('');
+
+  const [showPassword, setShowPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
+  const [error, setError] =
+    useState('');
+
+  const [loading, setLoading] =
+    useState(false);
+
+  // ====================================================
+  // LOGIN
+  // ====================================================
+
+  const handleLogin = (
+    event: React.FormEvent
+  ) => {
+
+    event.preventDefault();
+
+    setError('');
+
+    if (!email.trim()) {
+      setError(
+        'Please enter your email address.'
+      );
+      return;
+    }
+
+    if (!password) {
+      setError(
+        'Please enter your password.'
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    const result =
+      loginWithCredentials(
+        email,
+        password
+      );
+
+    setLoading(false);
+
+    if (!result.success) {
+      setError(
+        result.message ||
+        'Unable to sign in.'
+      );
+      return;
+    }
+
+    onSuccess?.();
   };
+
+  // ====================================================
+  // REGISTER
+  // ====================================================
+
+  const handleRegister = (
+    event: React.FormEvent
+  ) => {
+
+    event.preventDefault();
+
+    setError('');
+
+    if (!name.trim()) {
+      setError(
+        'Please enter your name.'
+      );
+      return;
+    }
+
+    if (!email.trim()) {
+      setError(
+        'Please enter your email address.'
+      );
+      return;
+    }
+
+    if (!password) {
+      setError(
+        'Please enter a password.'
+      );
+      return;
+    }
+
+    if (password.length < 6) {
+      setError(
+        'Password must contain at least 6 characters.'
+      );
+      return;
+    }
+
+    if (
+      password !==
+      confirmPassword
+    ) {
+      setError(
+        'Passwords do not match.'
+      );
+      return;
+    }
+
+    if (
+      role === 'doctor' &&
+      !specialty.trim()
+    ) {
+      setError(
+        'Please enter your medical specialty.'
+      );
+      return;
+    }
+
+    if (
+      role === 'doctor' &&
+      !licenseNumber.trim()
+    ) {
+      setError(
+        'Please enter your medical license number.'
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    const payload: RegisterPayload = {
+      name,
+      email,
+      password,
+      role,
+      phone,
+      specialty:
+        role === 'doctor'
+          ? specialty
+          : undefined,
+      licenseNumber:
+        role === 'doctor'
+          ? licenseNumber
+          : undefined,
+    };
+
+    const result =
+      registerUser(payload);
+
+    setLoading(false);
+
+    if (!result.success) {
+      setError(
+        result.message ||
+        'Unable to create account.'
+      );
+      return;
+    }
+
+    onSuccess?.();
+  };
+
+  // ====================================================
+  // DEMO LOGIN
+  // ====================================================
+
+  const handleDemoLogin = (
+    demoRole: UserRole
+  ) => {
+
+    setError('');
+
+    setLoading(true);
+
+    loginAs(demoRole);
+
+    setLoading(false);
+
+    onSuccess?.();
+  };
+
+  // ====================================================
+  // SWITCH MODE
+  // ====================================================
+
+  const switchMode = (
+    newMode: 'login' | 'register'
+  ) => {
+    setError('');
+    setMode(newMode);
+  };
+
+  // ====================================================
+  // UI
+  // ====================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-teal-50/20 to-slate-100 flex flex-col justify-center py-10 sm:py-16 px-4 sm:px-6 lg:px-8 antialiased selection:bg-teal-500 selection:text-white">
-      {/* Container */}
-      <div className="max-w-md w-full mx-auto space-y-6">
-        {/* Brand Banner Card */}
-        <div className="text-center space-y-2">
-          <div className="flex justify-center mb-1">
-            <MyVitaLogo size="lg" showText={true} showTagline={true} />
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-8">
+
+      <div className="w-full max-w-5xl">
+
+        {/* ============================================
+            HEADER / LOGO
+        ============================================ */}
+
+        <div className="text-center mb-8">
+
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-teal-600 text-white shadow-lg shadow-teal-200">
+
+            <HeartPulse
+              size={32}
+              strokeWidth={2.5}
+            />
+
           </div>
-          <p className="text-xs sm:text-sm text-slate-600 max-w-sm mx-auto font-medium">
-            The consent layer health data has been missing. Private vault storage with scoped QR sharing.
+
+          <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-900">
+            MyVita
+          </h1>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Your health. Your data. Your control.
           </p>
+
         </div>
 
-        {/* Main Card */}
-        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-200/80 overflow-hidden">
-          {/* Header Switcher Tabs */}
-          <div className="flex border-b border-slate-100 bg-slate-50/70 p-1.5 gap-1.5">
-            <button
-              id="auth-tab-login"
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setLoginError(null);
-              }}
-              className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-2xl transition-all flex items-center justify-center gap-2 ${
-                mode === 'login'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Lock className="w-4 h-4 text-teal-600" />
-              <span>Sign In</span>
-            </button>
-            <button
-              id="auth-tab-register"
-              type="button"
-              onClick={() => {
-                setMode('signup');
-                setRegError(null);
-              }}
-              className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-2xl transition-all flex items-center justify-center gap-2 ${
-                mode === 'signup'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-lime-600" />
-              <span>Sign Up (New Register)</span>
-            </button>
+        {/* ============================================
+            MAIN CARD
+        ============================================ */}
+
+        <div className="grid lg:grid-cols-2 bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+
+          {/* ==========================================
+              LEFT SIDE
+          ========================================== */}
+
+          <div className="hidden lg:flex bg-teal-700 text-white p-10 flex-col justify-between">
+
+            <div>
+
+              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white/10 text-sm font-semibold">
+                <ShieldCheck size={17} />
+                Secure Health Vault
+              </div>
+
+              <h2 className="mt-8 text-4xl font-black leading-tight">
+                Your complete
+                <br />
+                health journey,
+                <br />
+                in one place.
+              </h2>
+
+              <p className="mt-5 text-teal-50 leading-relaxed max-w-md">
+                Securely manage your medical records,
+                consent, emergency information and
+                healthcare connections with MyVita.
+              </p>
+
+            </div>
+
+            <div className="mt-10 space-y-4">
+
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
+                  <Lock size={18} />
+                </div>
+                <span className="text-sm">
+                  Private health data
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
+                  <ShieldCheck size={18} />
+                </div>
+                <span className="text-sm">
+                  Consent-based sharing
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
+                  <HeartPulse size={18} />
+                </div>
+                <span className="text-sm">
+                  Emergency-ready access
+                </span>
+              </div>
+
+            </div>
+
           </div>
 
-          <div className="p-6 sm:p-8">
-            {/* ===================== MODE: SIGN IN ===================== */}
+          {/* ==========================================
+              RIGHT SIDE
+          ========================================== */}
+
+          <div className="p-6 sm:p-10">
+
+            {/* MODE SWITCH */}
+
+            <div className="flex p-1 bg-slate-100 rounded-xl mb-7">
+
+              <button
+                type="button"
+                onClick={() =>
+                  switchMode('login')
+                }
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${
+                  mode === 'login'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500'
+                }`}
+              >
+                Sign In
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  switchMode('register')
+                }
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${
+                  mode === 'register'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500'
+                }`}
+              >
+                Create Account
+              </button>
+
+            </div>
+
+            <div className="mb-6">
+
+              <h2 className="text-2xl font-black text-slate-900">
+                {mode === 'login'
+                  ? 'Welcome back'
+                  : 'Create your MyVita account'}
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                {mode === 'login'
+                  ? 'Sign in to access your health dashboard.'
+                  : 'Set up your secure personal health space.'}
+              </p>
+
+            </div>
+
+            {/* ERROR */}
+
+            {error && (
+              <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {error}
+              </div>
+            )}
+
+            {/* ========================================
+                LOGIN FORM
+            ======================================== */}
+
             {mode === 'login' && (
-              <form onSubmit={handleLoginSubmit} className="space-y-4">
-                {loginError && (
-                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 animate-in fade-in">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>{loginError}</span>
-                  </div>
-                )}
+              <form
+                onSubmit={handleLogin}
+                className="space-y-5"
+              >
+
+                {/* EMAIL */}
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Email Address
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Email address
                   </label>
+
                   <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      id="login-email-input"
-                      type="email"
-                      required
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      placeholder="e.g. ananya.sharma@myvita.health"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 bg-slate-50/50"
+
+                    <Mail
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     />
+
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(event) =>
+                        setEmail(
+                          event.target.value
+                        )
+                      }
+                      placeholder="you@example.com"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    />
+
                   </div>
+
                 </div>
+
+                {/* PASSWORD */}
 
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      Password / Passcode
-                    </label>
-                    <span className="text-[11px] text-teal-600 font-medium hover:underline cursor-pointer">
-                      Passcode demo: demo123
-                    </span>
-                  </div>
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Password
+                  </label>
+
                   <div className="relative">
-                    <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      id="login-password-input"
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 bg-slate-50/50"
+
+                    <Lock
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     />
+
+                    <input
+                      type={
+                        showPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={password}
+                      onChange={(event) =>
+                        setPassword(
+                          event.target.value
+                        )
+                      }
+                      placeholder="Enter your password"
+                      className="w-full pl-10 pr-12 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    />
+
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      onClick={() =>
+                        setShowPassword(
+                          !showPassword
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
                     >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPassword ? (
+                        <EyeOff size={18} />
+                      ) : (
+                        <Eye size={18} />
+                      )}
                     </button>
+
                   </div>
+
                 </div>
 
-                <div className="pt-2">
+                {/* SUBMIT */}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold flex items-center justify-center gap-2 transition disabled:opacity-60"
+                >
+                  {loading
+                    ? 'Signing in...'
+                    : 'Sign In'}
+
+                  {!loading && (
+                    <ArrowRight size={18} />
+                  )}
+                </button>
+
+                {/* DEMO LOGIN */}
+
+                <div className="relative my-6">
+
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200" />
+                  </div>
+
+                  <div className="relative flex justify-center">
+                    <span className="px-3 bg-white text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Demo Access
+                    </span>
+                  </div>
+
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+
                   <button
-                    id="submit-login-button"
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm shadow-md shadow-teal-600/20 flex items-center justify-center gap-2 transition-all"
+                    type="button"
+                    disabled={loading}
+                    onClick={() =>
+                      handleDemoLogin(
+                        'patient'
+                      )
+                    }
+                    className="py-3 rounded-xl border border-teal-200 bg-teal-50 text-teal-700 font-bold text-sm hover:bg-teal-100 transition"
                   >
-                    <span>Sign In to MyVita Vault</span>
-                    <ArrowRight className="w-4 h-4" />
+                    Patient Demo
                   </button>
+
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() =>
+                      handleDemoLogin(
+                        'doctor'
+                      )
+                    }
+                    className="py-3 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 font-bold text-sm hover:bg-indigo-100 transition"
+                  >
+                    Doctor Demo
+                  </button>
+
                 </div>
 
-                {/* 1-Click Demo Profiles for Hackathon Evaluation */}
-                <div className="pt-4 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] uppercase tracking-wider font-bold text-slate-600">
-                      1-Click Hackathon Demo Logins
-                    </span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-lime-100 text-lime-900 border border-lime-200">
-                      Quick Access
-                    </span>
-                  </div>
+                <p className="text-center text-xs text-slate-400">
+                  Patient demo: demo123
+                  <br />
+                  Doctor demo: doctor123
+                </p>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      id="quick-login-patient-btn"
-                      type="button"
-                      onClick={() => handleQuickLogin('patient')}
-                      className="p-2.5 rounded-xl border border-teal-200 bg-teal-50/60 hover:bg-teal-100/60 transition-all text-left group"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center text-xs font-bold">
-                          AS
-                        </div>
-                        <span className="text-xs font-bold text-slate-900">Ananya S.</span>
-                      </div>
-                      <p className="text-[10px] text-teal-800 font-medium">Patient • Vault Owner</p>
-                    </button>
-
-                    <button
-                      id="quick-login-doctor-btn"
-                      type="button"
-                      onClick={() => handleQuickLogin('doctor')}
-                      className="p-2.5 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100/60 transition-all text-left group"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">
-                          DS
-                        </div>
-                        <span className="text-xs font-bold text-slate-900">Dr. Sharma</span>
-                      </div>
-                      <p className="text-[10px] text-indigo-800 font-medium">Cardiologist • Recipient</p>
-                    </button>
-                  </div>
-                </div>
               </form>
             )}
 
-            {/* ===================== MODE: SIGN UP (NEW REGISTER) ===================== */}
-            {mode === 'signup' && (
-              <form onSubmit={handleRegisterSubmit} className="space-y-4">
-                {regError && (
-                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 animate-in fade-in">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>{regError}</span>
-                  </div>
-                )}
+            {/* ========================================
+                REGISTER FORM
+            ======================================== */}
 
-                {/* Role Picker: Patient vs Doctor */}
+            {mode === 'register' && (
+              <form
+                onSubmit={handleRegister}
+                className="space-y-4"
+              >
+
+                {/* ROLE */}
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Select Account Type
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Account type
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+
+                  <div className="grid grid-cols-2 gap-3">
+
                     <button
-                      id="reg-role-patient"
                       type="button"
-                      onClick={() => setRegRole('patient')}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        regRole === 'patient'
-                          ? 'border-teal-500 bg-teal-50 text-slate-900 ring-2 ring-teal-500/20 shadow-xs'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      onClick={() =>
+                        setRole('patient')
+                      }
+                      className={`p-4 rounded-xl border text-left transition ${
+                        role === 'patient'
+                          ? 'border-teal-500 bg-teal-50'
+                          : 'border-slate-200 bg-white'
                       }`}
                     >
-                      <div className="flex items-center gap-2 font-bold text-xs">
-                        <User className="w-4 h-4 text-teal-600" />
-                        <span>Patient</span>
+
+                      <User
+                        size={20}
+                        className={
+                          role === 'patient'
+                            ? 'text-teal-600'
+                            : 'text-slate-400'
+                        }
+                      />
+
+                      <div className="mt-2 text-sm font-bold text-slate-900">
+                        Patient
                       </div>
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        Store private BP, create scoped QR tokens
-                      </p>
+
+                      <div className="text-xs text-slate-500 mt-1">
+                        Personal health vault
+                      </div>
+
                     </button>
 
                     <button
-                      id="reg-role-doctor"
                       type="button"
-                      onClick={() => setRegRole('doctor')}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        regRole === 'doctor'
-                          ? 'border-indigo-500 bg-indigo-50 text-slate-900 ring-2 ring-indigo-500/20 shadow-xs'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      onClick={() =>
+                        setRole('doctor')
+                      }
+                      className={`p-4 rounded-xl border text-left transition ${
+                        role === 'doctor'
+                          ? 'border-indigo-500 bg-indigo-50'
+                          : 'border-slate-200 bg-white'
                       }`}
                     >
-                      <div className="flex items-center gap-2 font-bold text-xs">
-                        <Stethoscope className="w-4 h-4 text-indigo-600" />
-                        <span>Doctor / Clinician</span>
+
+                      <Stethoscope
+                        size={20}
+                        className={
+                          role === 'doctor'
+                            ? 'text-indigo-600'
+                            : 'text-slate-400'
+                        }
+                      />
+
+                      <div className="mt-2 text-sm font-bold text-slate-900">
+                        Doctor
                       </div>
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        Scan tokens, review patient trends & MAP
-                      </p>
+
+                      <div className="text-xs text-slate-500 mt-1">
+                        Clinical dashboard
+                      </div>
+
                     </button>
+
                   </div>
+
                 </div>
 
-                {/* Full Name */}
+                {/* NAME */}
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Full Name
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Full name
                   </label>
+
                   <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+
+                    <User
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
                     <input
-                      id="reg-name-input"
                       type="text"
-                      required
-                      value={regName}
-                      onChange={(e) => setRegName(e.target.value)}
-                      placeholder={regRole === 'patient' ? 'e.g. Maya Patel' : 'e.g. Dr. Rajesh Verma, MD'}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 bg-slate-50/50"
+                      value={name}
+                      onChange={(event) =>
+                        setName(
+                          event.target.value
+                        )
+                      }
+                      placeholder="Your full name"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
                     />
+
                   </div>
+
                 </div>
 
-                {/* Email Address */}
+                {/* EMAIL */}
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Email Address
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Email address
                   </label>
+
                   <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      id="reg-email-input"
-                      type="email"
-                      required
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="e.g. user@myvita.health"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 bg-slate-50/50"
+
+                    <Mail
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     />
+
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(event) =>
+                        setEmail(
+                          event.target.value
+                        )
+                      }
+                      placeholder="you@example.com"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    />
+
                   </div>
+
                 </div>
 
-                {/* Doctor-specific fields */}
-                {regRole === 'doctor' && (
-                  <div className="grid grid-cols-2 gap-2 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100">
+                {/* PHONE */}
+
+                <div>
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Phone
+                  </label>
+
+                  <div className="relative">
+
+                    <Phone
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(event) =>
+                        setPhone(
+                          event.target.value
+                        )
+                      }
+                      placeholder="+91 XXXXX XXXXX"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    />
+
+                  </div>
+
+                </div>
+
+                {/* DOCTOR DETAILS */}
+
+                {role === 'doctor' && (
+                  <div className="grid sm:grid-cols-2 gap-4">
+
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+
+                      <label className="block text-sm font-bold text-slate-700 mb-2">
                         Specialty
                       </label>
-                      <input
-                        id="reg-specialty-input"
-                        type="text"
-                        value={regSpecialty}
-                        onChange={(e) => setRegSpecialty(e.target.value)}
-                        placeholder="Cardiology"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white"
-                      />
+
+                      <div className="relative">
+
+                        <Stethoscope
+                          size={18}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+
+                        <input
+                          type="text"
+                          value={specialty}
+                          onChange={(event) =>
+                            setSpecialty(
+                              event.target.value
+                            )
+                          }
+                          placeholder="Cardiology"
+                          className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                        />
+
+                      </div>
+
                     </div>
+
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        License / ID
+
+                      <label className="block text-sm font-bold text-slate-700 mb-2">
+                        License number
                       </label>
+
                       <input
-                        id="reg-license-input"
                         type="text"
-                        value={regLicense}
-                        onChange={(e) => setRegLicense(e.target.value)}
-                        placeholder="MD-4091"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white"
+                        value={licenseNumber}
+                        onChange={(event) =>
+                          setLicenseNumber(
+                            event.target.value
+                          )
+                        }
+                        placeholder="Medical license"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
                       />
+
                     </div>
+
                   </div>
                 )}
 
-                {/* Patient-specific phone / contact */}
-                {regRole === 'patient' && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Phone Number (Optional for Emergency QR)
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        id="reg-phone-input"
-                        type="tel"
-                        value={regPhone}
-                        onChange={(e) => setRegPhone(e.target.value)}
-                        placeholder="+1 (555) 019-2834"
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 bg-slate-50/50"
-                      />
-                    </div>
-                  </div>
-                )}
+                {/* PASSWORD */}
 
-                {/* Password & Confirm */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Password
-                    </label>
-                    <input
-                      id="reg-password-input"
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      placeholder="Min 4 chars"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 bg-slate-50/50"
+                <div>
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Password
+                  </label>
+
+                  <div className="relative">
+
+                    <Lock
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     />
+
+                    <input
+                      type={
+                        showPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={password}
+                      onChange={(event) =>
+                        setPassword(
+                          event.target.value
+                        )
+                      }
+                      placeholder="Minimum 6 characters"
+                      className="w-full pl-10 pr-12 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword(
+                          !showPassword
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    >
+                      {showPassword ? (
+                        <EyeOff size={18} />
+                      ) : (
+                        <Eye size={18} />
+                      )}
+                    </button>
+
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Confirm
-                    </label>
-                    <input
-                      id="reg-confirm-password-input"
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={regConfirmPassword}
-                      onChange={(e) => setRegConfirmPassword(e.target.value)}
-                      placeholder="Re-enter password"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 bg-slate-50/50"
-                    />
-                  </div>
                 </div>
 
-                <div className="pt-2">
-                  <button
-                    id="submit-register-button"
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full py-3 px-4 rounded-xl bg-lime-600 hover:bg-lime-700 text-white font-bold text-sm shadow-md shadow-lime-600/20 flex items-center justify-center gap-2 transition-all"
-                  >
-                    <span>Register New Account & Enter MyVita</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                {/* CONFIRM PASSWORD */}
+
+                <div>
+
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Confirm password
+                  </label>
+
+                  <div className="relative">
+
+                    <Lock
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
+                    <input
+                      type={
+                        showConfirmPassword
+                          ? 'text'
+                          : 'password'
+                      }
+                      value={confirmPassword}
+                      onChange={(event) =>
+                        setConfirmPassword(
+                          event.target.value
+                        )
+                      }
+                      placeholder="Repeat your password"
+                      className="w-full pl-10 pr-12 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          !showConfirmPassword
+                        )
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff size={18} />
+                      ) : (
+                        <Eye size={18} />
+                      )}
+                    </button>
+
+                  </div>
+
                 </div>
+
+                {/* SUBMIT */}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold flex items-center justify-center gap-2 transition disabled:opacity-60"
+                >
+                  {loading
+                    ? 'Creating account...'
+                    : 'Create Account'}
+
+                  {!loading && (
+                    <ArrowRight size={18} />
+                  )}
+                </button>
+
               </form>
             )}
+
+            {/* FOOTER */}
+
+            <div className="mt-7 text-center">
+
+              <p className="text-xs text-slate-400">
+                {mode === 'login'
+                  ? "Don't have an account?"
+                  : 'Already have an account?'}
+              </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  switchMode(
+                    mode === 'login'
+                      ? 'register'
+                      : 'login'
+                  )
+                }
+                className="mt-1 text-sm font-bold text-teal-600 hover:text-teal-700"
+              >
+                {mode === 'login'
+                  ? 'Create an account'
+                  : 'Sign in instead'}
+              </button>
+
+            </div>
+
           </div>
 
-          {/* Card Footer Features */}
-          <div className="bg-slate-50/90 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-teal-600" />
-              <span>Private On-Device Storage</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <QrCode className="w-3.5 h-3.5 text-lime-600" />
-              <span>Zero Raw Data Transferred</span>
-            </div>
-          </div>
         </div>
 
-        {/* Optional cancel button if opened from inside the app */}
-        {canCancel && onCancel && (
-          <div className="text-center">
-            <button
-              onClick={onCancel}
-              className="text-xs text-slate-500 hover:text-slate-800 underline"
-            >
-              Return to Current Session
-            </button>
-          </div>
-        )}
+        {/* SECURITY FOOTER */}
+
+        <div className="mt-6 flex items-center justify-center gap-2 text-xs text-slate-400">
+          <ShieldCheck size={14} />
+          <span>
+            MyVita keeps your health information under your control.
+          </span>
+        </div>
+
       </div>
+
     </div>
   );
 }

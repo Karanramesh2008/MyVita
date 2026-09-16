@@ -4,12 +4,15 @@ import hashlib
 import hmac
 import os
 import secrets
+import base64
+import json
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from dotenv import load_dotenv
 from ai import generate_health_insight
+from auth_db import init_db
 
 load_dotenv()
 
@@ -78,10 +81,64 @@ def now_ms() -> int:
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
+def create_consent_token(
+    consent_id: str,
+    recipient: str,
+    scope: str,
+    purpose: str,
+    expires: int,
+) -> str:
+    payload = {
+        "consent_id": consent_id,
+        "recipient": recipient,
+        "scope": scope,
+        "purpose": purpose,
+        "expires": expires,
+    }
 
-def sign_token(payload: str) -> str:
-    return hmac.new(SECRET_KEY, payload.encode(), hashlib.sha256).hexdigest()
+    payload_json = json.dumps(
+        payload,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
+    payload_encoded = base64.urlsafe_b64encode(
+        payload_json.encode()
+    ).decode().rstrip("=")
+
+    signature = hmac.new(
+        SECRET_KEY,
+        payload_encoded.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    return f"{payload_encoded}.{signature}"
+
+def verify_consent_token(token: str):
+    try:
+        payload_encoded, signature = token.split(".", 1)
+
+        expected_signature = hmac.new(
+            SECRET_KEY,
+            payload_encoded.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_signature):
+            return None
+
+        padding = "=" * (-len(payload_encoded) % 4)
+
+        payload_json = base64.urlsafe_b64decode(
+            payload_encoded + padding
+        ).decode()
+
+        payload = json.loads(payload_json)
+
+        return payload
+
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
 
 @app.get("/")
 def root():
@@ -161,9 +218,13 @@ def create_consent(data: ConsentRequest):
     duration_ms = {"1 hour": 3600000, "24 hours": 86400000, "7 days": 604800000, "30 days": 2592000000}.get(data.duration, 604800000)
     expires = created + duration_ms
     selected = [readings[rid] for rid in data.readingIds if rid in readings]
-    payload = f"{consent_id}|{data.recipient}|{data.scope}|{data.purpose}|{expires}"
-    signature = sign_token(payload)
-    token = f"{secrets.token_urlsafe(12)}.{secrets.token_urlsafe(24)}.{signature}"
+    token = create_consent_token(
+        consent_id=consent_id,
+        recipient=data.recipient,
+        scope=data.scope,
+        purpose=data.purpose,
+        expires=expires,
+    )
     consent = {
         "id": consent_id, "readingIds": data.readingIds, "recipient": data.recipient,
         "scope": data.scope, "purpose": data.purpose, "duration": data.duration,
@@ -192,16 +253,49 @@ def revoke_consent(consent_id: str):
 
 @app.get("/api/consents/token/{token}")
 def access_consent(token: str):
-    consent = next((c for c in consents.values() if c["token"] == token), None)
-    if not consent:
-        raise HTTPException(status_code=404, detail="Invalid consent token")
-    if consent["revoked"]:
-        raise HTTPException(status_code=403, detail="Consent has been revoked")
-    if now_ms() >= consent["expiresAt"]:
-        raise HTTPException(status_code=403, detail="Consent has expired")
-    audit.append({"id": secrets.token_hex(8), "type": "CONSENT_ACCESSED", "consentId": consent["id"], "recipient": consent["recipient"], "timestamp": now_ms()})
-    return {"consent": consent, "readings": consent["readingsData"]}
+    payload = verify_consent_token(token)
 
+    if not payload:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token signature"
+        )
+
+    consent_id = payload.get("consent_id")
+
+    consent = consents.get(consent_id)
+
+    if not consent:
+        raise HTTPException(
+            status_code=404,
+            detail="Consent not found"
+        )
+
+    if consent["revoked"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Consent has been revoked"
+        )
+
+    if now_ms() >= consent["expiresAt"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Consent has expired"
+        )
+
+    audit.append({
+        "id": secrets.token_hex(8),
+        "type": "CONSENT_ACCESSED",
+        "consentId": consent["id"],
+        "recipient": consent["recipient"],
+        "timestamp": now_ms(),
+    })
+
+    return {
+        "verified": True,
+        "consent": consent,
+        "readings": consent["readingsData"],
+    }
 
 @app.get("/api/audit")
 def get_audit():

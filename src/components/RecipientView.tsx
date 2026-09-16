@@ -47,8 +47,16 @@ export function RecipientView({ tokenString, onBackToVault }: RecipientViewProps
   const hasLoggedAudit = useRef(false);
 
   useEffect(() => {
+    hasLoggedAudit.current = false;
+
     async function loadRecipientData() {
       setIsLoading(true);
+      setIsExpiredOrRevoked(false);
+      setStatusReason('');
+      setAccessTimestamp('');
+      setTokenPayload(null);
+      setConsentRecord(null);
+      setReadings([]);
       const decoded = decodeConsentToken(tokenString);
 
       if (!decoded.validFormat || !decoded.payload) {
@@ -94,9 +102,6 @@ export function RecipientView({ tokenString, onBackToVault }: RecipientViewProps
       let filtered: BPReading[] = [];
       if (payload.scope === 'This reading') {
         filtered = all.filter((r) => payload.readingIds.includes(r.id));
-        if (filtered.length === 0 && all.length > 0) {
-          filtered = [all[0]];
-        }
       } else if (payload.scope === 'Last 30 days') {
         const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
         filtered = all.filter((r) => r.timestamp >= cutoff);
@@ -135,7 +140,12 @@ export function RecipientView({ tokenString, onBackToVault }: RecipientViewProps
       setIsLoading(false);
     }
 
-    loadRecipientData();
+    loadRecipientData().catch((error) => {
+      console.error('Recipient view error:', error);
+      setIsExpiredOrRevoked(true);
+      setStatusReason('Unable to verify this access link. Please request a new consent link from the patient.');
+      setIsLoading(false);
+    });
   }, [tokenString, showToast]);
 
   // Chart data formatting
@@ -173,7 +183,7 @@ export function RecipientView({ tokenString, onBackToVault }: RecipientViewProps
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-700">
         <div className="w-12 h-12 border-3 border-teal-500 border-t-transparent rounded-full animate-spin mb-4"></div>
         <p className="font-bold text-slate-800">Verifying Cryptographic Consent Token...</p>
-        <p className="text-xs text-slate-500 mt-1">Checking signature against Modiqo.ai (Rote) ledger</p>
+        <p className="text-xs text-slate-500 mt-1">Verifying consent with MyVita secure gateway</p>
       </div>
     );
   }
@@ -208,8 +218,14 @@ export function RecipientView({ tokenString, onBackToVault }: RecipientViewProps
             <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200 hidden sm:inline">
               Rote-v2 Gateway
             </span>
-            <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-teal-100 text-teal-800">
-              Verified Session
+            <span
+              className={`text-xs px-2.5 py-1 rounded-full font-bold ${
+                isExpiredOrRevoked
+                  ? 'bg-rose-100 text-rose-800'
+                  : 'bg-teal-100 text-teal-800'
+              }`}
+            >
+              {isExpiredOrRevoked ? 'Unverified Session' : 'Verified Session'}
             </span>
           </div>
         </div>
@@ -379,7 +395,7 @@ export function RecipientView({ tokenString, onBackToVault }: RecipientViewProps
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                 <div>
                   <h4 className="text-sm font-bold text-slate-900">Permitted Records ({readings.length})</h4>
-                  <p className="text-xs text-slate-500">Filtered client-side by token scope "{tokenPayload?.scope}"</p>
+                  <p className="text-xs text-slate-500">Filtered strictly by authorized token scope "{tokenPayload?.scope}"</p>
                 </div>
                 <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200">
                   FHIR-style Observation Export
@@ -440,7 +456,7 @@ export function RecipientView({ tokenString, onBackToVault }: RecipientViewProps
             </p>
           </div>
           <span className="text-[11px] text-slate-400 font-mono">
-            Modiqo.ai (Rote) • Token: {tokenPayload?.consentId || 'Verified'}
+            MyVita Secure Gateway • Token: {isExpiredOrRevoked ? 'Rejected' : (tokenPayload?.consentId || 'Verified')}
           </span>
         </footer>
       </main>
