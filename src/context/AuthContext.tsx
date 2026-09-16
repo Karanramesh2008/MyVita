@@ -1,6 +1,19 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { UserRole, UserSession, AuthAccount } from '../types';
 import { setDbUser } from '../lib/db';
+
+// ======================================================
+// LOCAL STORAGE KEYS
+// ======================================================
+
+const ACCOUNTS_KEY = 'myvita_accounts';
+const CURRENT_USER_KEY = 'myvita_current_user';
+const ACTIVE_ROLE_KEY = 'myvita_active_role';
+const LOGGED_IN_KEY = 'myvita_logged_in';
+
+// ======================================================
+// DEMO USERS
+// ======================================================
 
 export const PATIENT_USER: UserSession = {
   role: 'patient',
@@ -25,6 +38,10 @@ export const DOCTOR_USER: UserSession = {
   isDemo: true,
 };
 
+// ======================================================
+// DEMO ACCOUNTS
+// ======================================================
+
 const DEFAULT_ACCOUNTS: AuthAccount[] = [
   {
     ...PATIENT_USER,
@@ -34,11 +51,13 @@ const DEFAULT_ACCOUNTS: AuthAccount[] = [
   {
     ...DOCTOR_USER,
     passwordHash: 'doctor123',
-    specialty: 'Cardiology',
-    licenseNumber: 'MD-99482-CA',
     createdAt: Date.now() - 86400000 * 30,
   },
 ];
+
+// ======================================================
+// TYPES
+// ======================================================
 
 interface RegisterPayload {
   name: string;
@@ -50,14 +69,21 @@ interface RegisterPayload {
   licenseNumber?: string;
 }
 
+interface AuthResult {
+  success: boolean;
+  message?: string;
+  user?: UserSession;
+}
+
 interface AuthContextValue {
   currentUser: UserSession;
   currentRole: UserRole;
   isLoggedIn: boolean;
+  authLoading: boolean;
   registeredAccounts: AuthAccount[];
   loginAs: (role: UserRole) => void;
-  loginWithCredentials: (email: string, password?: string) => { success: boolean; message?: string };
-  registerUser: (payload: RegisterPayload) => { success: boolean; message?: string };
+  loginWithCredentials: (email: string, password?: string) => AuthResult;
+  registerUser: (payload: RegisterPayload) => AuthResult;
   logout: () => void;
   switchRole: () => void;
   showLoginModal: boolean;
@@ -66,194 +92,368 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// ======================================================
+// ACCOUNT HELPERS
+// ======================================================
+
+function loadAccounts(): AuthAccount[] {
+  try {
+    const saved = localStorage.getItem(ACCOUNTS_KEY);
+
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed as AuthAccount[];
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load MyVita accounts:', error);
+  }
+
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(DEFAULT_ACCOUNTS));
+  return DEFAULT_ACCOUNTS;
+}
+
+function saveAccounts(accounts: AuthAccount[]) {
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
+function saveSession(user: UserSession) {
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+  localStorage.setItem(ACTIVE_ROLE_KEY, user.role);
+  localStorage.setItem(LOGGED_IN_KEY, 'true');
+}
+
+function clearStoredSession() {
+  localStorage.removeItem(CURRENT_USER_KEY);
+  localStorage.removeItem(ACTIVE_ROLE_KEY);
+  localStorage.removeItem(LOGGED_IN_KEY);
+}
+
+function syncDatabaseUser(user: UserSession | null) {
+  if (!user) return;
+
+  setDbUser({
+    id: user.id,
+    name: user.name,
+    phone: user.phone,
+    isDemo: user.isDemo,
+  });
+}
+
+// ======================================================
+// AUTH PROVIDER
+// ======================================================
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [accounts, setAccounts] = useState<AuthAccount[]>(() => {
-    try {
-      const saved = localStorage.getItem('myvita_accounts');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      // fallback
-    }
-    return DEFAULT_ACCOUNTS;
-  });
-
-  const [currentUser, setCurrentUser] = useState<UserSession>(() => {
-    try {
-      const savedUser = localStorage.getItem('myvita_current_user');
-      if (savedUser) {
-        return JSON.parse(savedUser);
-      }
-      const savedRole = localStorage.getItem('myvita_active_role') || localStorage.getItem('vh_active_role');
-      return savedRole === 'doctor' ? DOCTOR_USER : PATIENT_USER;
-    } catch (e) {
-      return PATIENT_USER;
-    }
-  });
-
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    try {
-      const savedState = localStorage.getItem('myvita_logged_in');
-      return savedState !== null ? savedState === 'true' : true;
-    } catch (e) {
-      return true;
-    }
-  });
-
+  // Keep a non-null profile for existing Navbar/LoginModal code.
+  // It is NOT considered authenticated until isLoggedIn === true.
+  const [currentUser, setCurrentUser] = useState<UserSession>(PATIENT_USER);
+  const [currentRole, setCurrentRole] = useState<UserRole>('patient');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [accounts, setAccounts] = useState<AuthAccount[]>([]);
   const [showLoginModal, setShowLoginModal] = useState(false);
 
+  // ----------------------------------------------------
+  // RESTORE SESSION ON FIRST LOAD
+  // ----------------------------------------------------
+
   useEffect(() => {
+    const storedAccounts = loadAccounts();
+    setAccounts(storedAccounts);
+
     try {
-      localStorage.setItem('myvita_accounts', JSON.stringify(accounts));
-    } catch (e) {
-      // ignore
+      const loggedIn = localStorage.getItem(LOGGED_IN_KEY) === 'true';
+      const savedUser = localStorage.getItem(CURRENT_USER_KEY);
+      const savedRole = localStorage.getItem(ACTIVE_ROLE_KEY) as UserRole | null;
+
+      // No saved session = logged out.
+      if (!loggedIn || !savedUser) {
+        clearStoredSession();
+        setIsLoggedIn(false);
+        setCurrentRole('patient');
+        return;
+      }
+
+      const parsedUser = JSON.parse(savedUser) as UserSession;
+
+      const accountExists = storedAccounts.some(
+        (account) =>
+          account.email.toLowerCase().trim() ===
+          parsedUser.email.toLowerCase().trim()
+      );
+
+      if (!accountExists) {
+        clearStoredSession();
+        setIsLoggedIn(false);
+        setCurrentRole('patient');
+        return;
+      }
+
+      // Valid saved session -> restore it.
+      setCurrentUser(parsedUser);
+      setCurrentRole(savedRole || parsedUser.role);
+      setIsLoggedIn(true);
+      syncDatabaseUser(parsedUser);
+    } catch (error) {
+      console.error('Failed to restore MyVita session:', error);
+      clearStoredSession();
+      setIsLoggedIn(false);
+      setCurrentRole('patient');
+    } finally {
+      setAuthLoading(false);
+    }
+  }, []);
+
+  // Persist account changes only. Session state is written explicitly
+  // by login/register/logout so an initial render can never create a session.
+  useEffect(() => {
+    if (accounts.length > 0) {
+      try {
+        saveAccounts(accounts);
+      } catch (error) {
+        console.error('Failed to save MyVita accounts:', error);
+      }
     }
   }, [accounts]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('myvita_current_user', JSON.stringify(currentUser));
-      localStorage.setItem('myvita_active_role', currentUser.role);
-      localStorage.setItem('myvita_logged_in', String(isLoggedIn));
-    } catch (e) {
-      // ignore
-    }
-    setDbUser({
-      id: currentUser.id,
-      name: currentUser.name,
-      phone: currentUser.phone,
-      isDemo: currentUser.isDemo,
-    });
-  }, [currentUser, isLoggedIn]);
+  // ----------------------------------------------------
+  // LOGIN WITH EMAIL + PASSWORD
+  // ----------------------------------------------------
 
-  const loginAs = (role: UserRole) => {
-    const existing = accounts.find((a) => a.role === role);
-    if (existing) {
-      setCurrentUser(existing);
-      setDbUser({
-        id: existing.id,
-        name: existing.name,
-        phone: existing.phone,
-        isDemo: existing.isDemo,
-      });
-    } else {
-      const fallback = role === 'patient' ? PATIENT_USER : DOCTOR_USER;
-      setCurrentUser(fallback);
-      setDbUser({
-        id: fallback.id,
-        name: fallback.name,
-        phone: fallback.phone,
-        isDemo: fallback.isDemo,
-      });
-    }
-    setIsLoggedIn(true);
-    setShowLoginModal(false);
-  };
+  const loginWithCredentials = (
+    email: string,
+    password?: string
+  ): AuthResult => {
+    const normalizedEmail = email.trim().toLowerCase();
 
-  const loginWithCredentials = (email: string, password?: string): { success: boolean; message?: string } => {
     const match = accounts.find(
-      (a) => a.email.toLowerCase().trim() === email.toLowerCase().trim()
+      (account) => account.email.toLowerCase().trim() === normalizedEmail
     );
 
     if (!match) {
-      return { success: false, message: 'Account not found with this email. Please check your credentials or register a new account.' };
+      return {
+        success: false,
+        message:
+          'Account not found with this email. Please check your credentials or register a new account.',
+      };
     }
 
     if (password && match.passwordHash && match.passwordHash !== password) {
-      return { success: false, message: 'Incorrect password. (Try "demo123" for patient, "doctor123" for doctor)' };
+      return {
+        success: false,
+        message:
+          'Incorrect password. (Try "demo123" for patient, "doctor123" for doctor)',
+      };
     }
 
-    setCurrentUser(match);
-    setDbUser({
-      id: match.id,
+    const user: UserSession = {
+      role: match.role,
       name: match.name,
+      title: match.title,
+      id: match.id,
+      avatarColor: match.avatarColor,
+      email: match.email,
       phone: match.phone,
+      specialty: match.specialty,
+      licenseNumber: match.licenseNumber,
       isDemo: match.isDemo,
-    });
+    };
+
+    setCurrentUser(user);
+    setCurrentRole(user.role);
     setIsLoggedIn(true);
     setShowLoginModal(false);
-    return { success: true };
+
+    saveSession(user);
+    syncDatabaseUser(user);
+
+    return { success: true, user };
   };
 
-  const registerUser = (payload: RegisterPayload): { success: boolean; message?: string } => {
-    if (!payload.email || !payload.name) {
-      return { success: false, message: 'Name and email are required.' };
+  // ----------------------------------------------------
+  // QUICK DEMO LOGIN
+  // ----------------------------------------------------
+
+  const loginAs = (role: UserRole) => {
+    const demoUser = role === 'patient' ? PATIENT_USER : DOCTOR_USER;
+
+    let updatedAccounts = [...accounts];
+    let demoAccount = updatedAccounts.find(
+      (account) =>
+        account.email.toLowerCase() === demoUser.email.toLowerCase()
+    );
+
+    if (!demoAccount) {
+      demoAccount = {
+        ...demoUser,
+        passwordHash: role === 'patient' ? 'demo123' : 'doctor123',
+        createdAt: Date.now(),
+      };
+
+      updatedAccounts = [...updatedAccounts, demoAccount];
+      setAccounts(updatedAccounts);
+      saveAccounts(updatedAccounts);
+    }
+
+    const user: UserSession = {
+      role: demoAccount.role,
+      name: demoAccount.name,
+      title: demoAccount.title,
+      id: demoAccount.id,
+      avatarColor: demoAccount.avatarColor,
+      email: demoAccount.email,
+      phone: demoAccount.phone,
+      specialty: demoAccount.specialty,
+      licenseNumber: demoAccount.licenseNumber,
+      isDemo: demoAccount.isDemo,
+    };
+
+    setCurrentUser(user);
+    setCurrentRole(role);
+    setIsLoggedIn(true);
+    setShowLoginModal(false);
+
+    saveSession(user);
+    syncDatabaseUser(user);
+  };
+
+  // ----------------------------------------------------
+  // REGISTER NEW USER
+  // ----------------------------------------------------
+
+  const registerUser = (payload: RegisterPayload): AuthResult => {
+    const name = payload.name.trim();
+    const email = payload.email.trim().toLowerCase();
+
+    if (!name || !email) {
+      return {
+        success: false,
+        message: 'Name and email are required.',
+      };
     }
 
     const existing = accounts.find(
-      (a) => a.email.toLowerCase().trim() === payload.email.toLowerCase().trim()
+      (account) => account.email.toLowerCase().trim() === email
     );
+
     if (existing) {
-      return { success: false, message: 'An account with this email already exists. Please sign in.' };
+      return {
+        success: false,
+        message:
+          'An account with this email already exists. Please sign in.',
+      };
     }
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const newId = payload.role === 'patient' ? `MV-PT-${randomSuffix}` : `MV-DR-${randomSuffix}`;
+    const newId =
+      payload.role === 'patient'
+        ? `MV-PT-${randomSuffix}`
+        : `MV-DR-${randomSuffix}`;
 
     const newAccount: AuthAccount = {
       id: newId,
-      name: payload.name.trim(),
-      email: payload.email.trim().toLowerCase(),
+      name,
+      email,
       role: payload.role,
-      isDemo: false, // New registered user has NO demo data!
+      isDemo: false,
       title:
         payload.role === 'patient'
           ? 'Patient (Personal Vault)'
           : payload.specialty
-          ? `${payload.specialty} Specialist`
-          : 'Licensed Clinician',
+            ? `${payload.specialty} Specialist`
+            : 'Licensed Clinician',
       avatarColor: payload.role === 'patient' ? 'teal' : 'indigo',
-      passwordHash: payload.password || 'password123',
+      passwordHash: payload.password,
       phone: payload.phone,
       specialty: payload.specialty,
       licenseNumber: payload.licenseNumber,
       createdAt: Date.now(),
     };
 
-    setAccounts((prev) => [...prev, newAccount]);
-    setDbUser({
-      id: newAccount.id,
+    const updatedAccounts = [...accounts, newAccount];
+    setAccounts(updatedAccounts);
+    saveAccounts(updatedAccounts);
+
+    const user: UserSession = {
+      role: newAccount.role,
       name: newAccount.name,
+      title: newAccount.title,
+      id: newAccount.id,
+      avatarColor: newAccount.avatarColor,
+      email: newAccount.email,
       phone: newAccount.phone,
+      specialty: newAccount.specialty,
+      licenseNumber: newAccount.licenseNumber,
       isDemo: false,
-    });
-    setCurrentUser(newAccount);
+    };
+
+    setCurrentUser(user);
+    setCurrentRole(user.role);
     setIsLoggedIn(true);
     setShowLoginModal(false);
 
-    return { success: true };
+    saveSession(user);
+    syncDatabaseUser(user);
+
+    return { success: true, user };
   };
 
+  // ----------------------------------------------------
+  // LOGOUT
+  // ----------------------------------------------------
+
   const logout = () => {
+    clearStoredSession();
     setIsLoggedIn(false);
+    setCurrentRole('patient');
     setShowLoginModal(false);
   };
 
+  // ----------------------------------------------------
+  // SWITCH ROLE
+  // ----------------------------------------------------
+
   const switchRole = () => {
-    if (currentUser.role === 'patient') {
-      loginAs('doctor');
-    } else {
-      loginAs('patient');
-    }
+    loginAs(currentRole === 'patient' ? 'doctor' : 'patient');
   };
 
+  // ----------------------------------------------------
+  // CONTEXT VALUE
+  // ----------------------------------------------------
+
+  const value: AuthContextValue = {
+    currentUser,
+    currentRole,
+    isLoggedIn,
+    authLoading,
+    registeredAccounts: accounts,
+    loginAs,
+    loginWithCredentials,
+    registerUser,
+    logout,
+    switchRole,
+    showLoginModal,
+    setShowLoginModal,
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-teal-600 text-white flex items-center justify-center shadow-lg">
+            <span className="text-xl font-bold">M</span>
+          </div>
+          <p className="mt-4 text-sm font-bold text-slate-800">Loading MyVita...</p>
+          <p className="mt-1 text-xs text-slate-400">Checking your session</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        currentRole: currentUser.role,
-        isLoggedIn,
-        registeredAccounts: accounts,
-        loginAs,
-        loginWithCredentials,
-        registerUser,
-        logout,
-        switchRole,
-        showLoginModal,
-        setShowLoginModal,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
@@ -261,8 +461,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
+
   if (!ctx) {
     throw new Error('useAuth must be used within AuthProvider');
   }
+
   return ctx;
 }
