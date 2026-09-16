@@ -1,11 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
 import {
-  MapPin,
-  Lock,
-  Share2,
-  AlertTriangle,
-  FileText,
   Activity,
 } from 'lucide-react';
 
@@ -14,17 +9,13 @@ import { ToastProvider, useToast } from './context/ToastContext';
 
 import { Navbar } from './components/Navbar';
 import { VaultView } from './components/VaultView';
-import { ScanModal } from './components/ScanModal';
-import { ConsentModal } from './components/ConsentModal';
 import { RecipientView } from './components/RecipientView';
 import { EmergencyTab } from './components/EmergencyTab';
 import { AuditTab } from './components/AuditTab';
 import { ConsentsTab } from './components/ConsentsTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
 import { DoctorDashboard } from './components/DoctorDashboard';
-import { LoginModal } from './components/LoginModal';
 import AuthPage from './components/AuthPage';
-import { MyVitaLogo } from './components/MyVitaLogo';
 import { NearbyCare } from './components/NearbyCare';
 
 import {
@@ -33,9 +24,9 @@ import {
 } from './types';
 
 import {
-  getReadings,
-  getConsents,
-  getAudit,
+  getAllReadings,
+  getAllConsents,
+  getAllAuditEvents,
 } from './lib/db';
 
 function MainAppContent() {
@@ -51,9 +42,9 @@ function MainAppContent() {
   const refreshData = useCallback(async () => {
     try {
       const [r, c, a] = await Promise.all([
-        getReadings(),
-        getConsents(),
-        getAudit(),
+        getAllReadings(),
+        getAllConsents(),
+        getAllAuditEvents(),
       ]);
       setReadings(r);
       setConsents(c);
@@ -80,7 +71,12 @@ function MainAppContent() {
   }, [isLoggedIn, refreshData]);
 
   if (recipientToken) {
-    return <RecipientView token={recipientToken} />;
+    return <RecipientView tokenString={recipientToken} onBackToVault={() => {
+      setRecipientToken(null);
+      window.location.hash = '';
+      setActiveTab('audit');
+      showToast('Returned to Vault', 'info', 'Check the Audit log to verify access');
+    }} />;
   }
 
   if (authLoading) {
@@ -118,13 +114,7 @@ function MainAppContent() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        currentUser={currentUser}
-        currentRole={currentRole}
-        onLogout={logout}
-      />
+      <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {currentRole === 'doctor' ? (
