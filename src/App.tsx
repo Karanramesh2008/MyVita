@@ -23,23 +23,24 @@ import {
   AlertTriangle,
   FileText,
   Activity,
-  Stethoscope,
-  Shield,
-  Layers,
-  ChevronRight,
-  ExternalLink,
 } from 'lucide-react';
 
 export type ActiveTab = 'vault' | 'consents' | 'emergency' | 'audit' | 'analytics';
 
 function MainAppContent() {
-  const { currentRole, showLoginModal, setShowLoginModal, isLoggedIn, logout } = useAuth();
+  const {
+    currentRole,
+    showLoginModal,
+    setShowLoginModal,
+    isLoggedIn,
+    authLoading,
+  } = useAuth();
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('vault');
   const [readings, setReadings] = useState<BPReading[]>([]);
   const [consents, setConsents] = useState<ConsentRecord[]>([]);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   // Auth Page modal/overlay state
   const [isAuthPageOpen, setIsAuthPageOpen] = useState(false);
@@ -72,29 +73,42 @@ function MainAppContent() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Initialize DB and load readings
+  // Initialize DB and load readings only after authentication succeeds.
   const refreshData = async () => {
+    if (!isLoggedIn) return;
+
+    setIsInitializing(true);
+
     try {
       await initAndSeedDB();
       const loadedReadings = await getAllReadings();
       setReadings(loadedReadings);
       const loadedConsents = await getAllConsents();
       setConsents(loadedConsents);
+    } catch (error) {
+      console.error('Failed to load MyVita data:', error);
     } finally {
       setIsInitializing(false);
     }
   };
 
+  // Initialize health data only for an authenticated user.
   useEffect(() => {
-    refreshData();
-
-    // Subscribe to multi-tab real-time sync
-    const unsub = syncBus.subscribe((msg: SyncMessage) => {
+    if (!authLoading && isLoggedIn) {
       refreshData();
+    }
+  }, [authLoading, isLoggedIn]);
+
+  useEffect(() => {
+    // Subscribe to multi-tab real-time sync.
+    const unsub = syncBus.subscribe((msg: SyncMessage) => {
+      if (isLoggedIn) {
+        refreshData();
+      }
     });
 
     return () => unsub();
-  }, []);
+  }, [isLoggedIn]);
 
   const handleOpenShare = (reading: BPReading) => {
     setShareTargetReading(reading);
@@ -115,34 +129,43 @@ function MainAppContent() {
   const handleBackToVault = () => {
     setRecipientToken(null);
     window.location.hash = '';
-    // Switch to Audit tab if coming from simulated doctor scan to verify Step 5:
-    // "Returns to vault → audit log shows 'Dr. Sharma accessed your BP at 3:42 PM'"
+    // Switch to Audit tab if coming from simulated doctor scan to verify Step 5.
     setActiveTab('audit');
     showToast('Returned to Vault', 'info', 'Check the Audit log to verify Dr. Sharma access');
   };
 
-  if (isInitializing) {
+  // Wait until AuthProvider has checked localStorage.
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-800">
         <div className="mb-4">
           <MyVitaLogo size="lg" showText={false} />
         </div>
-        <h2 className="text-xl font-bold text-slate-900">Initializing MyVita...</h2>
-        <p className="text-xs text-slate-500 mt-1">Loading cryptographic keys and private on-device vault</p>
+        <h2 className="text-xl font-bold text-slate-900">Checking MyVita session...</h2>
+        <p className="text-xs text-slate-500 mt-1">Restoring your secure session</p>
       </div>
     );
   }
 
-  // If viewing recipient link directly (/view/:token)
+  // If viewing a recipient link directly (/view/:token), keep this route public.
   if (recipientToken) {
     return <RecipientView tokenString={recipientToken} onBackToVault={handleBackToVault} />;
   }
 
-  // Dedicated Login / Register page if user is not signed in or requested auth page
+  // No valid session -> Sign In page.
   if (!isLoggedIn) {
-    return <AuthPage initialMode={authMode} onSuccess={() => refreshData()} />;
+    return (
+      <AuthPage
+        initialMode="login"
+        onSuccess={() => {
+          // AuthContext has already persisted the session and updated isLoggedIn.
+          // The effect above will initialize the vault after React re-renders.
+        }}
+      />
+    );
   }
 
+  // Dedicated Login / Register page opened from the authenticated Navbar.
   if (isAuthPageOpen) {
     return (
       <AuthPage
@@ -154,6 +177,19 @@ function MainAppContent() {
           refreshData();
         }}
       />
+    );
+  }
+
+  // Authenticated but health DB is loading.
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-800">
+        <div className="mb-4">
+          <MyVitaLogo size="lg" showText={false} />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Initializing MyVita...</h2>
+        <p className="text-xs text-slate-500 mt-1">Loading your private on-device health vault</p>
+      </div>
     );
   }
 
@@ -286,7 +322,7 @@ function MainAppContent() {
         )}
       </div>
 
-      {/* Floating Bottom Tabs Bar for Mobile (Vault | Consents | Emergency | Audit) as requested */}
+      {/* Floating Bottom Tabs Bar for Mobile */}
       {currentRole === 'patient' && (
         <nav
           id="mobile-bottom-tabs"
